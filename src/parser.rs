@@ -114,7 +114,7 @@ pub struct Postfix {
 impl Postfix {
     pub fn value(&self) -> f64 {
         let mut numbers: Vec<f64> = Vec::new();
-        let mut parts: Vec<&str> = self.content.split(" ").collect();
+        let parts: Vec<&str> = self.content.split(" ").collect();
 
         for part in parts {
             if is_number(part) {
