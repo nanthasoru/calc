@@ -1,9 +1,10 @@
 use core::f64;
 use std::process::exit;
 
-fn evalpriority(operator: char) -> u8 {
+fn evalpriority(operator: char) -> i8 {
     match operator {
-        '*' | '/' | '%' => 1,
+        '*' | '/' | '%' => 2,
+        '+' | '-' => 1,
         _ => 0,
     }
 }
@@ -36,6 +37,13 @@ pub fn is_number(s: &str) -> bool {
     true
 }
 
+fn s_pop(stack: &mut Vec<f64>, value_if_none: f64) -> f64 {
+    match stack.pop() {
+        Some(n) => n,
+        None => value_if_none,
+    }
+}
+
 pub struct Infix {
     content: String,
 }
@@ -52,57 +60,45 @@ impl Infix {
         let mut operators: Vec<char> = Vec::new();
 
         for symbol in self.content.chars() {
-            match symbol {
-                ' ' => continue,
-                '(' => operators.push(symbol),
-                ')' => {
-                    while !operators.is_empty() && operators.last() != Some(&'(') {
-                        postfix_notation.push(' ');
-                        postfix_notation.push(operators.pop().expect(""));
-                    }
+            if let Some(last_symbol) = postfix_notation.chars().last()
+                && !last_symbol.is_whitespace()
+                && !last_symbol.is_digit(10)
+            {
+                postfix_notation.push(' ');
+            }
+
+            if symbol == ' ' {
+                continue;
+            } else if symbol == '(' {
+                operators.push(symbol);
+            } else if symbol == ')' {
+                while !operators.is_empty() && operators.last() != Some(&'(') {
+                    postfix_notation.push(' ');
+                    postfix_notation.push(operators.pop().unwrap());
                     operators.pop();
                 }
-                '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' => {
-                    postfix_notation.push(symbol);
-                }
-                '+' | '-' | '*' | '/' | '%' => {
-                    let previous_operator_priority = match operators.last() {
-                        Some(operator) => evalpriority(*operator),
-                        None => 0,
-                    };
-
-                    let current_operator_priority = evalpriority(symbol);
-
+                operators.pop();
+            } else if symbol.is_digit(10) {
+                postfix_notation.push(symbol);
+            } else {
+                postfix_notation.push(' ');
+                while operators.len() > 0
+                    && evalpriority(symbol) <= evalpriority(*operators.last().unwrap())
+                {
+                    postfix_notation.push(operators.pop().unwrap());
                     postfix_notation.push(' ');
-
-                    if previous_operator_priority > current_operator_priority {
-                        postfix_notation.push(operators.pop().expect(""));
-                        postfix_notation.push(' ');
-                        match operators.pop() {
-                            Some(chr) => {
-                                postfix_notation.push(chr);
-                                postfix_notation.push(' ');
-                            }
-                            None => {}
-                        }
-                    }
-
-                    operators.push(symbol);
                 }
-                _ => {
-                    eprintln!("Unknown symbol '{}' in '{}'", symbol, self.content);
-                    exit(0);
-                }
+                operators.push(symbol);
             }
         }
 
-        while !operators.is_empty() {
+        while operators.len() > 0 {
             postfix_notation.push(' ');
-            postfix_notation.push(operators.pop().expect(""));
+            postfix_notation.push(operators.pop().unwrap());
         }
 
         Postfix {
-            content: postfix_notation,
+            content: postfix_notation.replace("  ", " "),
         }
     }
 }
@@ -114,7 +110,15 @@ pub struct Postfix {
 impl Postfix {
     pub fn value(&self) -> f64 {
         let mut numbers: Vec<f64> = Vec::new();
-        let parts: Vec<&str> = self.content.split(" ").collect();
+        let mut parts: Vec<&str> = self.content.split(" ").collect();
+
+        if let Some(first) = parts.get(0)
+            && first.is_empty()
+        {
+            parts.remove(0);
+        }
+
+        println!("{:?}", parts);
 
         for part in parts {
             if is_number(part) {
@@ -128,16 +132,16 @@ impl Postfix {
             }
 
             let n = match part {
-                "+" => numbers.pop().expect("") + numbers.pop().expect(""),
-                "-" => -numbers.pop().expect("") + numbers.pop().expect(""),
-                "*" => numbers.pop().expect("") * numbers.pop().expect(""),
+                "+" => s_pop(&mut numbers, 0.0) + s_pop(&mut numbers, 0.0),
+                "-" => -s_pop(&mut numbers, 0.0) + s_pop(&mut numbers, 0.0),
+                "*" => s_pop(&mut numbers, 1.0) * s_pop(&mut numbers, 1.0),
                 "/" => {
-                    let n = numbers.pop().expect("");
-                    numbers.pop().expect("") / n
+                    let n = s_pop(&mut numbers, 1.0);
+                    s_pop(&mut numbers, 1.0) / n
                 }
                 "%" => {
-                    let n = numbers.pop().expect("");
-                    numbers.pop().expect("") % n
+                    let n = s_pop(&mut numbers, 1.0);
+                    s_pop(&mut numbers, 1.0) % n
                 }
                 _ => {
                     eprintln!("Unknown part '{}'", part);
@@ -182,6 +186,22 @@ mod tests {
     }
 
     #[test]
+    fn to_postfix_test_4() {
+        to_postfix_skeleton(
+            "4/1 - 4/3 + 4/5 - 4/7 + 4/9 - 4/11",
+            "4 1 / 4 3 / - 4 5 / + 4 7 / - 4 9 / + 4 11 / -",
+        );
+    }
+
+    #[test]
+    fn to_postfix_test_5() {
+        to_postfix_skeleton(
+            "(4/1) - (4/3) + (4/5) - (4/7) + (4/9) - (4/11)",
+            "4 1 / 4 3 / - 4 5 / + 4 7 / - 4 9 / + 4 11 / -",
+        );
+    }
+
+    #[test]
     fn wrapper_test_1() {
         assert!(is_correctly_wrapped(&"(1+2)*3".to_string()));
     }
@@ -199,5 +219,15 @@ mod tests {
     #[test]
     fn wrapper_test_4() {
         assert!(!is_correctly_wrapped(&"))((".to_string()));
+    }
+
+    #[test]
+    fn parenthesis_test_1() {
+        assert_eq!(
+            Infix::new(&"(4/1) - (4/3) + (4/5) - (4/7) + (4/9) - (4/11)".to_string())
+                .to_postfix()
+                .value(),
+            2.9760461760461765
+        )
     }
 }
